@@ -1,0 +1,7 @@
+.*
+*.o
+*.bin
+*.exe
+obj/
+bfctl
+tags
