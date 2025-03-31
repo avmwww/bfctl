@@ -1,4 +1,4 @@
-# Betaflight cli configurtion tool 
+# Betaflight cli configuration tool 
 
 Supports cli interface configuration of betaflight based controller 
 
