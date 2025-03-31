@@ -7,6 +7,23 @@ ESC configuration and firmware update
 
 _Depends on library: https://github.com/avmwww/library_ 
 
+To comppile simple try 
+```
+make
+```
+
+or 
+```
+make "C_FLAGS=-DDEBUG"
+```
+
+Windows version can be compiled using cross compiler 
+```
+make CROSS_COMPILE=i686-w64-mingw32-
+```
+
+Usage 
+
 ```
 Betaflight control utility, version 1.00, build on Mar 31 2025, 12:36:58
 Usage: ./bfctl [options]

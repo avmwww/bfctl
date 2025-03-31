@@ -118,7 +118,11 @@ int main(int argc, char **argv)
 	char port_name[256];
 
 	memset(&conf, 0, sizeof(struct bfctl_conf));
+#ifdef __MINGW32__
+	conf.fd = INVALID_HANDLE_VALUE;
+#else
 	conf.fd = -1;
+#endif
 
 	/* set default values */
 	conf.dev = NULL;

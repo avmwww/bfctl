@@ -50,6 +50,59 @@ static const uint32_t bf_baud_rate(uint8_t index)
 	return bf_baud_rates[index];
 }
 
+#ifdef __MINGW32__
+ssize_t getline(char **lineptr, size_t *n, FILE *stream) 
+{
+	char *bufptr;
+	char *p;
+	size_t size;
+	int c;
+
+	if (lineptr == NULL || stream  == NULL || n == NULL)
+		return -1;
+
+	bufptr = *lineptr;
+	size = *n;
+
+	c = fgetc(stream);
+	if (c == EOF)
+		return -1;
+
+	if (bufptr == NULL) {
+		bufptr = malloc(128);
+		if (bufptr == NULL)
+			return -1;
+
+		size = 128;
+	}
+	p = bufptr;
+	while (c != EOF) {
+		unsigned long offt = p - bufptr;
+		if (offt > (size - 1)) {
+			size = size + 128;
+			p = realloc(bufptr, size);
+			if (p == NULL) {
+				free(bufptr);
+				return -1;
+			}
+			bufptr = p;
+			p += offt;
+		}
+		*p++ = c;
+		if (c == '\n')
+			break;
+
+		c = fgetc(stream);
+	}
+
+	*p++ = '\0';
+	*lineptr = bufptr;
+	*n = size;
+
+	return p - bufptr - 1;
+}
+#endif
+
 /*
  *
  */
