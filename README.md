@@ -127,3 +127,15 @@ bfctl --msp "esc boot $CHAN 1"
 # Reboot device
 bfctl --msp "esc exit"
 ```
+
+Or use internal command
+```
+export CHAN=1
+# Setup passthrough mode
+bfctl --msp "esc_pass 255"
+# Request interface name
+bfctl --msp "esc iname"
+sleep 1
+# Flash firmware
+bfctl --msp "esc flashall $CHAN $FW"
+```

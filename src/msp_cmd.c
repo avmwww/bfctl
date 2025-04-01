@@ -909,7 +909,7 @@ static const struct esc_command esc_commands[] = {
 	{"exit", "exit from esc mode", esc_exit},
 	{"version", "<channel> <major> <minor>set esc firmware version", esc_version},
 	{"flash", "<channel> <file> flash firmware bin file to esc", esc_flash},
-	{"flashall", "<channel> <file> alias of commands: pass, init, mark, version, flash, mark, boot, exit", esc_flashall},
+	{"flashall", "<channel> <file> alias of commands: init, mark, version, flash, mark, boot, exit", esc_flashall},
 	{"send", "<cmd args> send to esc", esc_send},
 	{"dump", "<channel> <addr> <size> esc flash dump, addr for firmware "
 		xstr(ESC_FLASH_FIRMWARE_OFFT) ", for settings "
