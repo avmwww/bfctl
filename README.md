@@ -86,9 +86,44 @@ Turn on 1 motor:
 bfctl --msp "smotor 2000 0 0 0"
 ```
 
+Turn off 4 motors:
+
+```
+bfctl --msp "smotor 0 0 0 0"
+```
+
+
 Set esc passthrough mode and dump esc channel 1 parameters 
 
 ```
 bfctl --msp "esc_pass 255"
 bfctl --msp "esc sdump 0"
+```
+
+Update AM32 based firmware on esc channel 2 ( only binary firmware files supported ) 
+```
+# Setup passthrough mode
+bfctl --msp "esc_pass 255"
+# Request interface name
+bfctl --msp "esc iname"
+sleep 1
+# Initialize channel 2
+export CHAN=1
+export FW="am32_esc_firmware.bin
+export MARK_FAIL="FLASH FAIL  "
+export MARK_NOT_READY="NOT READY   "
+
+bfctl --msp "esc init $CHAN"
+# Mark firmware fail
+bfctl --msp "esc mark $CHAN $MARK_FAIL"
+# Clear version, firmware detect version is cleared and set settings to default
+bfctl --msp "esc version $CHAN 0 0 "
+# Flash firmware
+bfctl --msp "esc flash $CHAN $FW"
+# Mark firmware not ready
+bfctl --msp "esc mark $CHAN $MARK_NOT_READY"
+# Mark bootable
+bfctl --msp "esc boot $CHAN 1"
+# Reboot device
+bfctl --msp "esc exit"
 ```
