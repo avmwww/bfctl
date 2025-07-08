@@ -91,7 +91,7 @@ struct settings {
 		uint8_t a;			// 49
 		uint8_t b;			// 50
 		uint8_t c;			// 51
-		uint8_t data[124];		// 52..173
+		uint8_t data[124];		// 52..175
 	} __attribute__((packed)) tune;
 } __attribute__((packed));
 

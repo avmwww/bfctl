@@ -292,6 +292,11 @@ static int msp_set_passthrough(msp_t *msp, const char *arg)
 
 /* ESC interface commands  */
 
+typedef struct {
+	int d;
+	float f;
+} esc_set_val_t;
+
 struct esc_set {
 	char *name;
 	char *desc;
@@ -299,10 +304,14 @@ struct esc_set {
 	int max;
 	int disable;
 	int ext;
-	int str;
-	int (*conv)(int, int);
+	enum {
+		ESC_DATA_INT = 0,
+		ESC_DATA_FLT,
+		ESC_DATA_STR,
+	} type;
+	esc_set_val_t (*conv)(esc_set_val_t, int);
+	const char *units;
 };
-
 
 static int esc_interface_name(esc4way_t *esc, const char *arg)
 {
@@ -346,60 +355,74 @@ static int esc_write(esc4way_t *esc, const char *arg)
 	return esc4way_write_flash(esc, addr & ~0xff, data, sizeof(data));
 }
 
-static int esc_conv_kv(int val, int set)
+static esc_set_val_t esc_conv_kv(esc_set_val_t val, int set)
 {
 	if (set)
-		return ESC_KV_TO_SET(val);
+		val.d = ESC_KV_TO_SET(val.d);
 	else
-		return ESC_SET_TO_KV(val);
+		val.d = ESC_SET_TO_KV(val.d);
+
+	return val;
 }
 
-static int esc_conv_advanve_level(int val, int set)
+static esc_set_val_t esc_conv_advanve_level(esc_set_val_t val, int set)
 {
 	if (set)
-		return ESC_ADVANCE_LEVEL_TO_SET(val);
+		val.d = ESC_ADVANCE_LEVEL_TO_SET(val.f);
 	else
-		return ESC_SET_TO_ADVANCE_LEVEL(val);
+		val.f = ESC_SET_TO_ADVANCE_LEVEL(val.d);
+
+	return val;
 }
 
-static int esc_conv_servo_low(int val, int set)
+static esc_set_val_t esc_conv_servo_low(esc_set_val_t val, int set)
 {
 	if (set)
-		return ESC_SERVO_LOW_TO_SET(val);
+		val.d = ESC_SERVO_LOW_TO_SET(val.d);
 	else
-		return ESC_SET_TO_SERVO_LOW(val);
+		val.d = ESC_SET_TO_SERVO_LOW(val.d);
+
+	return val;
 }
 
-static int esc_conv_servo_high(int val, int set)
+static esc_set_val_t esc_conv_servo_high(esc_set_val_t val, int set)
 {
 	if (set)
-		return ESC_SERVO_HI_TO_SET(val);
+		val.d = ESC_SERVO_HI_TO_SET(val.d);
 	else
-		return ESC_SET_TO_SERVO_HI(val);
+		val.d = ESC_SET_TO_SERVO_HI(val.d);
+
+	return val;
 }
 
-static int esc_conv_servo_mid(int val, int set)
+static esc_set_val_t esc_conv_servo_mid(esc_set_val_t val, int set)
 {
 	if (set)
-		return ESC_SERVO_MID_TO_SET(val);
+		val.d = ESC_SERVO_MID_TO_SET(val.d);
 	else
-		return ESC_SET_TO_SERVO_MID(val);
+		val.d = ESC_SET_TO_SERVO_MID(val.d);
+
+	return val;
 }
 
-static int esc_conv_cell_low_volt(int val, int set)
+static esc_set_val_t esc_conv_cell_low_volt(esc_set_val_t val, int set)
 {
 	if (set)
-		return ESC_CELL_LOW_VOLT_TO_SET(val);
+		val.d = ESC_CELL_LOW_VOLT_TO_SET(val.d);
 	else
-		return ESC_SET_TO_CELL_LOW_VOLT(val);
+		val.d = ESC_SET_TO_CELL_LOW_VOLT(val.d);
+
+	return val;
 }
 
-static int esc_conv_current_limit(int val, int set)
+static esc_set_val_t esc_conv_current_limit(esc_set_val_t val, int set)
 {
 	if (set)
-		return ESC_CURRENT_LIMIT_TO_SET(val);
+		val.d = ESC_CURRENT_LIMIT_TO_SET(val.d);
 	else
-		return ESC_SET_TO_CURRENT_LIMIT(val);
+		val.d = ESC_SET_TO_CURRENT_LIMIT(val.d);
+
+	return val;
 }
 
 static const struct esc_set esc_settings[] = {
@@ -408,7 +431,7 @@ static const struct esc_set esc_settings[] = {
 	{""},
 	{"major", "Firmware ver major"},
 	{"minor", "Firmware ver minor"},
-	{"name"    , "Device name", 0, 0, 0, 11, 1},
+	{"name"    , "Device name", 0, 0, 0, 11, ESC_DATA_STR},
 	{""}, {""}, {""}, {""}, {""}, {""}, {""}, {""}, {""}, {""}, {""},
 	{"dir"     , "Reverse direction",  0, 1, 0},
 	{"bidir"   , "Bi direction / 3D" , 0, 1, 0},
@@ -416,8 +439,8 @@ static const struct esc_set esc_settings[] = {
 	{"cpwm"    , "Complementary PWM" , 0, 1, 0},
 	{"vpwm"    , "Variable PWM"      , 0, 1, 0},
 	{"rptotect", "Rotor protect"     , 0, 1, 0},
-	{"alevel"  , "Advance level"     , 0, 3, -1, 0, 0, esc_conv_advanve_level},
-	{"tcycle"  , "Timer cycle"       , 8, 48, -1},
+	{"alevel"  , "Advance level"     , 0, 42, -1, 0, ESC_DATA_FLT, esc_conv_advanve_level, "°"},
+	{"tcycle"  , "Timer cycle"       , 8, 48, -1, 0, 0, NULL, "kHz"},
 	{"dcycle"  , "Duty cycle"        , 50, 150, -1},
 	{"kv"      , "KV"                , -1, -1, -1, 0, 0, esc_conv_kv},
 	{"poles"   , "Poles"             , -1, -1, -1},
@@ -440,6 +463,7 @@ static const struct esc_set esc_settings[] = {
 	{"curr"    , "Current limit"     , 0 , 99, 0, 0, 0, esc_conv_current_limit},
 	{"spower"  , "Sine power"        , 1 , 10, 0},
 	{"proto"   , "Input protocol"    , 0 , 9, -1},
+	{"dtime"   , "Dead time"         , 0 , 255, -1},
 	{""},
 };
 
@@ -453,7 +477,7 @@ static int esc_sset(esc4way_t *esc, const char *arg)
 	const struct esc_set *es;
 	char name[256];
 	int chan = strtol(arg, NULL, 0);
-	int val;
+	esc_set_val_t  val;
 	int i = 0;
 
 	arg = cmd_arg_next(arg);
@@ -471,7 +495,8 @@ static int esc_sset(esc4way_t *esc, const char *arg)
 	if (!arg)
 		return -1;
 
-	val = strtol(arg, NULL, 0);
+	val.d = strtol(arg, NULL, 0);
+	val.f = strtof(arg, NULL);
 
 	if (esc4way_select_chan(esc, 0, chan) < 0)
 		return -1;
@@ -490,8 +515,8 @@ static int esc_sset(esc4way_t *esc, const char *arg)
 			if (es->conv)
 				val = es->conv(val, 1);
 
-			printf("Set %s to value %d\n", es->name, val);
-			set[i] = val;
+			printf("Set %s to value %d\n", es->name, val.d);
+			set[i] = val.d;
 
 			return esc4way_write_flash(esc, esc->set.addr, set, esc->set.size);
 		}
@@ -500,40 +525,39 @@ static int esc_sset(esc4way_t *esc, const char *arg)
 	return -1;
 }
 
-static int esc_sdump(esc4way_t *esc, const char *arg)
+static void esc_settings_printf(uint8_t *set, int chan)
 {
 	const struct esc_set *es;
-	int chan = strtol(arg, NULL, 0);
-	//struct settings *set = &esc->set.data.name;
-	uint8_t *set = esc->set.data.byte;
 	int i;
-
-	if (esc4way_select_chan(esc, 0, chan) < 0)
-		return -1;
-
-	if (esc4way_settings_cache(esc) < 0)
-		return -1;
 
 	printf("ESC channel %d settings:\n", chan);
 #define PRE		"\t(%d)%-10s%-24s"
 	for (i = 0; i < sizeof(esc_settings) / sizeof(esc_settings[0]); i++) {
 		es = &esc_settings[i];
 		if (es->name[0]) {
-			int val = set[i];
+			esc_set_val_t val;
+
+			val.d = set[i];
 			if (es->conv)
 				val = es->conv(val, 0);
 
-			if (es->str) {
+			printf(PRE, i, es->name, es->desc);
+			if (es->type == ESC_DATA_STR) {
 				int k;
-				printf(PRE, i, es->name, es->desc);
 				for (k = 0; k < es->ext; k++)
 					printf("%c", set[i + k]);
 			} else {
-				printf(PRE "%d", i, es->name, es->desc, val);
-				if (val != set[i])
+				if (es->type == ESC_DATA_FLT)
+					printf("%.3f", val.f);
+				else
+					printf("%d", val.d);
+				if (es->units)
+					printf("%s", es->units);
+				printf(" (%d) ", set[i]);
+				if (val.d != set[i])
 					printf(" (%d)", set[i]);
 				if (es->min == 0 && es->max == 1) /* boolean */
-					printf(" (%s)", esc_bool_value(val));
+					printf(" (%s)", esc_bool_value(val.d));
 				else if (es->min >= 0 && es->max > 0) {
 					printf(" [%d..%d]", es->min, es->max);
 					if (es->disable >= 0)
@@ -544,7 +568,61 @@ static int esc_sdump(esc4way_t *esc, const char *arg)
 		}
 		i += es->ext;
 	}
-#undef PRE
+}
+
+static int esc_sdump(esc4way_t *esc, const char *arg)
+{
+	int chan = strtol(arg, NULL, 0);
+	uint8_t *set = esc->set.data.byte;
+
+	if (esc4way_select_chan(esc, 0, chan) < 0)
+		return -1;
+
+	if (esc4way_settings_cache(esc) < 0)
+		return -1;
+
+	esc_settings_printf(set, chan);
+
+	return 0;
+}
+
+static int esc_sfdump(esc4way_t *esc, const char *arg)
+{
+	const char *fname;
+	int fl;
+	uint8_t *set = esc->set.data.byte;
+	unsigned int size = sizeof(esc->set.data.name);
+	struct stat stat;
+
+	fname = arg;
+
+	if (!strlen(fname)) {
+		printf("Invalid file name: <%s>\n", fname);
+		return -1;
+	}
+
+	fl = open(fname, O_RDONLY | O_BINARY);
+	if (fl < 0) {
+		fprintf(stderr, "Can't open file %s, %s\n", fname, strerror(errno));
+		return -1;
+	}
+
+	if (fstat(fl, &stat) < 0) {
+		fprintf(stderr, "Can't get file %s size, %s\n", fname, strerror(errno));
+		close(fl);
+		return -1;
+	}
+
+	if (stat.st_size != size)
+		printf("Warning: settings file size is invalid, %ld, should be %d\n",
+				stat.st_size, size);
+
+	if (read(fl, set, size) < 0) {
+		fprintf(stderr, "Can't read file %s, %s\n", fname, strerror(errno));
+		close(fl);
+		return -1;
+	}
+	esc_settings_printf(set, 0);
 
 	return 0;
 }
@@ -900,6 +978,7 @@ struct esc_command {
 static const struct esc_command esc_commands[] = {
 	{"sset", "<channel> <name> <value> set esc setting", esc_sset},
 	{"sdump", "<channel> esc settings dump", esc_sdump},
+	{"sfdump", "<file> esc settings dump from bin file", esc_sfdump},
 	{"swrite", "<channel> <file> flash settings bin file to esc", esc_swrite},
 	{"sread", "<channel> <file> read settings to bin file from esc", esc_sread},
 	{"iname", "esc interface name", esc_interface_name},
