@@ -116,6 +116,8 @@ int main(int argc, char **argv)
 	char optstr[2 * OPT_LEN + 1];
 	struct bfctl_conf conf;
 	char port_name[256];
+	int err_dev = 0;
+	int err;
 
 	memset(&conf, 0, sizeof(struct bfctl_conf));
 #ifdef __MINGW32__
@@ -154,20 +156,25 @@ int main(int argc, char **argv)
 	if (strlen(port_name))
 		conf.dev = port_name;
 
-	if ((conf.fd = serial_open(conf.dev)) < 0)
-		failure(errno, "Can't open serial port %s", conf.dev);
+	if ((conf.fd = serial_open(conf.dev)) < 0) {
+		err_dev = errno;
+	} else {
+		if (serial_setup(conf.fd, conf.baud) < 0)
+			failure(errno, "Can't set serial port %s parameters", conf.dev);
 
-	if (serial_setup(conf.fd, conf.baud) < 0)
-		failure(errno, "Can't set serial port %s parameters", conf.dev);
-
-	serial_set_timeout(conf.fd, 0.2);
+		serial_set_timeout(conf.fd, 0.2);
+	}
 
 	if (conf.msp_cmd) {
 		conf.msp.fd = conf.fd;
 		conf.msp.esc = esc4way_init(conf.fd);
 		/* if passthrough mode, set first passthrough over MSP protocol */
-		if (msp_exec_cmd(&conf.msp, conf.msp_cmd) < 0)
-			failure(errno, "Can't execute MSP command");
+		if ((err = msp_exec_cmd(&conf.msp, conf.msp_cmd)) < 0) {
+			if (err == -2)
+				failure(err_dev, "Can't open serial port %s", conf.dev);
+			else
+				failure(errno, "Can't execute MSP command");
+		}
 
 		exit(EXIT_SUCCESS);
 	}

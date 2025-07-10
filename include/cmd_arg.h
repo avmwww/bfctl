@@ -14,6 +14,8 @@ typedef struct cmd_s {
 	const struct cmd_s *sub;
 } cmd_t;
 
+int cmd_name_copy(const char *arg, char *name, int len);
+
 int cmd_arg_copy(const char *buf, char *cmd, int len, char *arg, int arg_len);
 
 int cmd_arg_to_int(const char *arg, int *val, int len);

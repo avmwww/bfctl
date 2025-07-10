@@ -6,6 +6,7 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -438,7 +439,7 @@ static const struct esc_set esc_settings[] = {
 	{"sin"     , "Sinusoidal startup", 0, 1, 0},
 	{"cpwm"    , "Complementary PWM" , 0, 1, 0},
 	{"vpwm"    , "Variable PWM"      , 0, 1, 0},
-	{"rptotect", "Rotor protect"     , 0, 1, 0},
+	{"rprotect", "Rotor protect"     , 0, 1, 0},
 	{"alevel"  , "Advance level"     , 0, 42, -1, 0, ESC_DATA_FLT, esc_conv_advanve_level, "°"},
 	{"tcycle"  , "Timer cycle"       , 8, 48, -1, 0, 0, NULL, "kHz"},
 	{"dcycle"  , "Duty cycle"        , 50, 150, -1},
@@ -472,19 +473,11 @@ static const char *esc_bool_value(int value)
 	return value ? "ON" : "OFF";
 }
 
-static int esc_sset(esc4way_t *esc, const char *arg)
+static int esc_parse_set(const char *arg, char *name, int name_len, esc_set_val_t *val)
 {
-	const struct esc_set *es;
-	char name[256];
-	int chan = strtol(arg, NULL, 0);
-	esc_set_val_t  val;
 	int i = 0;
 
-	arg = cmd_arg_next(arg);
-	if (!arg)
-		return -1;
-
-	while (arg[i] != '\0' && arg[i] != ' ' && i < (sizeof(name) - 1)) {
+	while (arg[i] != '\0' && arg[i] != ' ' && i < (name_len - 1)) {
 		name[i] = arg[i];
 		i++;
 	}
@@ -495,14 +488,16 @@ static int esc_sset(esc4way_t *esc, const char *arg)
 	if (!arg)
 		return -1;
 
-	val.d = strtol(arg, NULL, 0);
-	val.f = strtof(arg, NULL);
+	val->d = strtol(arg, NULL, 0);
+	val->f = strtof(arg, NULL);
 
-	if (esc4way_select_chan(esc, 0, chan) < 0)
-		return -1;
+	return 0;
+}
 
-	if (esc4way_settings_cache(esc) < 0)
-		return -1;
+static const struct esc_set *esc_find_set(const char *name, int *index)
+{
+	const struct esc_set *es;
+	int i;
 
 	for (i = 0; i < sizeof(esc_settings) / sizeof(esc_settings[0]); i++) {
 		es = &esc_settings[i];
@@ -510,19 +505,72 @@ static int esc_sset(esc4way_t *esc, const char *arg)
 			continue;
 
 		if (!strcmp(es->name, name)) {
-			uint8_t *set = esc->set.data.byte;
-
-			if (es->conv)
-				val = es->conv(val, 1);
-
-			printf("Set %s to value %d\n", es->name, val.d);
-			set[i] = val.d;
-
-			return esc4way_write_flash(esc, esc->set.addr, set, esc->set.size);
+			*index = i;
+			return es;
 		}
 	}
 
-	return -1;
+	return NULL;
+}
+
+static int esc_set_read_from_file(const char *fname, uint8_t *set, int size)
+{
+	int fl;
+	struct stat stat;
+
+	if (!strlen(fname)) {
+		printf("Invalid file name: <%s>\n", fname);
+		return -1;
+	}
+
+	fl = open(fname, O_RDONLY | O_BINARY);
+	if (fl < 0) {
+		fprintf(stderr, "Can't open file %s, %s\n", fname, strerror(errno));
+		return -1;
+	}
+
+	if (fstat(fl, &stat) < 0) {
+		fprintf(stderr, "Can't get file %s size, %s\n", fname, strerror(errno));
+		close(fl);
+		return -1;
+	}
+
+	if (stat.st_size != size)
+		printf("Warning: settings file size is invalid, %ld, should be %d\n",
+				stat.st_size, size);
+
+	if (read(fl, set, size) < 0) {
+		fprintf(stderr, "Can't read file %s, %s\n", fname, strerror(errno));
+		close(fl);
+		return -1;
+	}
+	close(fl);
+	return 0;
+}
+
+static int esc_set_write_to_file(const char *fname, uint8_t *set, int size)
+{
+	int fl;
+
+	if (!strlen(fname)) {
+		printf("Invalid file name: <%s>\n", fname);
+		return -1;
+	}
+
+	fl = open(fname, O_WRONLY | O_BINARY | O_CREAT | O_TRUNC,
+			S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+	if (fl < 0) {
+		fprintf(stderr, "Can't open file %s, %s\n", fname, strerror(errno));
+		return -1;
+	}
+
+	if (write(fl, set, size) < 0) {
+		fprintf(stderr, "Can't write file %s, %s\n", fname, strerror(errno));
+		close(fl);
+		return -1;
+	}
+	close(fl);
+	return 0;
 }
 
 static void esc_settings_printf(uint8_t *set, int chan)
@@ -570,6 +618,78 @@ static void esc_settings_printf(uint8_t *set, int chan)
 	}
 }
 
+static int esc_sset(esc4way_t *esc, const char *arg)
+{
+	char name[256];
+	int chan = strtol(arg, NULL, 0);
+	esc_set_val_t  val;
+	uint8_t *set = esc->set.data.byte;
+	const struct esc_set *es;
+	int index;
+
+	arg = cmd_arg_next(arg);
+	if (!arg)
+		return -1;
+
+	if (esc_parse_set(arg, name, sizeof(name), &val) < 0)
+		return -1;
+
+	if (esc4way_select_chan(esc, 0, chan) < 0)
+		return -1;
+
+	if (esc4way_settings_cache(esc) < 0)
+		return -1;
+
+	if (!(es = esc_find_set(name, &index))) {
+		fprintf(stderr, "Invalid setting name: %s\n", name);
+		return -1;
+	}
+
+	if (es->conv)
+		val = es->conv(val, 1);
+
+	printf("Set %s to value %d\n", es->name, val.d);
+	set[index] = val.d;
+
+	return esc4way_write_flash(esc, esc->set.addr, set, esc->set.size);
+}
+
+static int esc_sfset(esc4way_t *esc, const char *arg)
+{
+	uint8_t *set = esc->set.data.byte;
+	unsigned int size = sizeof(esc->set.data.name);
+	char name[256];
+	const struct esc_set *es;
+	esc_set_val_t  val;
+	char fname[256];
+	int index;
+
+	cmd_name_copy(arg, fname, sizeof(fname));
+
+	arg = cmd_arg_next(arg);
+	if (!arg)
+		return -1;
+
+	if (esc_set_read_from_file(fname, set, size) < 0)
+		return -1;
+
+	if (esc_parse_set(arg, name, sizeof(name), &val) < 0)
+		return -1;
+
+	if (!(es = esc_find_set(name, &index))) {
+		fprintf(stderr, "Invalid setting name: %s\n", name);
+		return -1;
+	}
+
+	if (es->conv)
+		val = es->conv(val, 1);
+
+	printf("Set %s to value %d\n", es->name, val.d);
+	set[index] = val.d;
+
+	return esc_set_write_to_file(fname, set, size);
+}
+
 static int esc_sdump(esc4way_t *esc, const char *arg)
 {
 	int chan = strtol(arg, NULL, 0);
@@ -589,39 +709,14 @@ static int esc_sdump(esc4way_t *esc, const char *arg)
 static int esc_sfdump(esc4way_t *esc, const char *arg)
 {
 	const char *fname;
-	int fl;
 	uint8_t *set = esc->set.data.byte;
 	unsigned int size = sizeof(esc->set.data.name);
-	struct stat stat;
 
 	fname = arg;
 
-	if (!strlen(fname)) {
-		printf("Invalid file name: <%s>\n", fname);
+	if (esc_set_read_from_file(fname, set, size) < 0)
 		return -1;
-	}
 
-	fl = open(fname, O_RDONLY | O_BINARY);
-	if (fl < 0) {
-		fprintf(stderr, "Can't open file %s, %s\n", fname, strerror(errno));
-		return -1;
-	}
-
-	if (fstat(fl, &stat) < 0) {
-		fprintf(stderr, "Can't get file %s size, %s\n", fname, strerror(errno));
-		close(fl);
-		return -1;
-	}
-
-	if (stat.st_size != size)
-		printf("Warning: settings file size is invalid, %ld, should be %d\n",
-				stat.st_size, size);
-
-	if (read(fl, set, size) < 0) {
-		fprintf(stderr, "Can't read file %s, %s\n", fname, strerror(errno));
-		close(fl);
-		return -1;
-	}
 	esc_settings_printf(set, 0);
 
 	return 0;
@@ -973,12 +1068,14 @@ struct esc_command {
 	const char *cmd;
 	const char *help;
 	int (*handle)(esc4way_t *, const char *);
+	bool no_need_dev;
 };
 
 static const struct esc_command esc_commands[] = {
 	{"sset", "<channel> <name> <value> set esc setting", esc_sset},
+	{"sfset", "<file> <name> <value> set esc setting in bin file", esc_sfset, true},
 	{"sdump", "<channel> esc settings dump", esc_sdump},
-	{"sfdump", "<file> esc settings dump from bin file", esc_sfdump},
+	{"sfdump", "<file> esc settings dump from bin file", esc_sfdump, true},
 	{"swrite", "<channel> <file> flash settings bin file to esc", esc_swrite},
 	{"sread", "<channel> <file> read settings to bin file from esc", esc_sread},
 	{"iname", "esc interface name", esc_interface_name},
@@ -995,7 +1092,7 @@ static const struct esc_command esc_commands[] = {
 		xstr(ESC_FLASH_SETTINGS_OFFT), esc_dump},
 	{"mark", "<channel> <string> esc set device_info to string", esc_mark},
 	{"boot", "<channel> <byte> write byte at 0 position of settings, 1 is valid firmware", esc_boot},
-	{"help", "help usage", esc_usage},
+	{"help", "help usage", esc_usage, true},
 	{NULL} /* last */
 };
 
@@ -1020,6 +1117,15 @@ static int esc_command_handle(esc4way_t *esc, const char *cmd, const char *arg)
 
 	while (ec->cmd) {
 		if (!strcmp(cmd, ec->cmd)) {
+			if (!ec->no_need_dev && esc->fd < 0)
+				return -2;
+
+			if (!ec->no_need_dev) {
+				/* For esc ops set timeout of serial port to 1s */
+				if (serial_set_timeout(esc->fd, 1.0) < 0)
+					failure(errno, "Can't set serial port timeout");
+			}
+
 			err = ec->handle(esc, arg);
 			if (err < 0)
 				return -1;
@@ -1037,10 +1143,6 @@ static int esc_command(msp_t *msp, const char *args)
 	int len;
 
 	len = cmd_arg_copy(args, cmd, sizeof(cmd), arg, sizeof(arg));
-
-	/* For esc ops set timeout of serial port to 1s */
-	if (serial_set_timeout(msp->fd, 1.0) < 0)
-		failure(errno, "Can't set serial port timeout");
 
 	len = esc_command_handle(msp->esc, cmd, arg);
 	if (len == 0) {
@@ -1139,11 +1241,12 @@ struct msp_command {
 	const char *cmd;
 	const char *help;
 	int (*handle)(msp_t *, const char *);
+	bool no_need_dev;
 };
 
 static const struct msp_command msp_commands[] = {
 	{"info", "print board info", msp_board_info},
-	{"help", "help usage", msp_usage},
+	{"help", "help usage", msp_usage, true},
 	{"tx_info", "print tx info", msp_tx_info},
 	{"serial", "print serial config", msp_print_serial_config},
 	{"analog", "print analog", msp_print_analog},
@@ -1159,7 +1262,7 @@ static const struct msp_command msp_commands[] = {
 	{"pass", "set passthrough serial mode", msp_set_passthrough},
 	{"tlm", "<motor or empty to all> get motor telemetry", msp_get_motor_telemetry},
 	{"esc_pass", "<channel or 255 for all> set esc passthrough", msp_set_esc_passthrough},
-	{"esc", "esc commands, try help to view available commands", esc_command},
+	{"esc", "esc commands, try help to view available commands", esc_command, true},
 	{NULL} /* last */
 };
 
@@ -1184,9 +1287,12 @@ static int msp_command_handle(msp_t *msp, const char *cmd, const char *arg)
 
 	while (mc->cmd) {
 		if (!strcmp(cmd, mc->cmd)) {
+			if (!mc->no_need_dev && msp->fd < 0)
+				return -2;
+
 			err = mc->handle(msp, arg);
 			if (err < 0)
-				return -1;
+				return err;
 			return 1;
 		}
 		mc++;
@@ -1210,6 +1316,9 @@ int msp_exec_cmd(msp_t *msp, const char *cmd)
 			msp_usage(msp, arg);
 		}
 		if (len < 0) {
+			if (len == -2)
+				return len;
+
 			printf("transfer command <%s %s> error\n", data, arg);
 			exit(EXIT_FAILURE);
 		}

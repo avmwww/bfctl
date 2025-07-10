@@ -13,6 +13,19 @@
 #include "dump_hex.h"
 
 //#define DEBUG_CMD_PARSE
+int cmd_name_copy(const char *arg, char *name, int len)
+{
+	int n = 0;
+
+	while (*arg != '\0' && *arg != ' ' && n < len - 1) {
+		*name++ = *arg++;
+		n++;
+	}
+
+	name = '\0';
+	return n;
+}
+
 
 int cmd_arg_to_int(const char *arg, int *val, int len)
 {
